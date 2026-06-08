@@ -250,7 +250,20 @@ export class BearbyProviderImpl {
     console.log('[BearbyTron] buildTronWeb: isAuth=' + isAuth + ' address=' + (data?.address || 'none'));
 
     if (!isAuth) {
-      return { ready: true, defaultAddress: { hex: false, base58: false } };
+      return {
+        ready: true,
+        defaultAddress: { hex: false, base58: false },
+        trx: {
+          sign: () => Promise.reject(new Error('Wallet not connected')),
+          signMessageV2: () => Promise.reject(new Error('Wallet not connected')),
+          multiSign: () => Promise.reject(new Error('Wallet not connected')),
+        },
+        request: this.request.bind(this),
+        on: this.on.bind(this),
+        removeListener: this.removeListener.bind(this),
+        isTronLink: true,
+        isBearby: true,
+      };
     }
 
     this.#nodeConfig = data!.node;
@@ -266,6 +279,11 @@ export class BearbyProviderImpl {
     tw.trx.signMessageV2 = this.signMessageV2.bind(this);
     tw.trx.multiSign = this.multiSign.bind(this);
     tw.trx._signTypedData = this._signTypedData.bind(this);
+    (tw as any).request = this.request.bind(this);
+    (tw as any).on = this.on.bind(this);
+    (tw as any).removeListener = this.removeListener.bind(this);
+    (tw as any).isTronLink = true;
+    (tw as any).isBearby = true;
 
     return tw;
   }

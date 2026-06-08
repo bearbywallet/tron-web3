@@ -57,13 +57,12 @@ export * from './src/tip6963';
     if (!('tronWeb' in window) || !window.tronWeb) {
       try {
         Object.defineProperty(window, 'tronWeb', {
-          value: tronProvider,
-          writable: false,
+          get: () => provider.tronWeb,
           configurable: true,
         });
-        console.log('[BearbyTron] window.tronWeb assigned via defineProperty');
+        console.log('[BearbyTron] window.tronWeb assigned via defineProperty (getter)');
       } catch (defineError) {
-        (window as any).tronWeb = tronProvider;
+        (window as any).tronWeb = provider.tronWeb;
         console.log('[BearbyTron] window.tronWeb assigned via fallback');
       }
     }
