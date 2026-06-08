@@ -5,7 +5,7 @@ export * from './src/types';
 export * from './src/bearby-provider';
 export * from './src/tip6963';
 
-(function() {
+(async function() {
   console.log('[BearbyTron] IIFE start');
 
   if (typeof window === 'undefined' || !window) {
@@ -67,16 +67,19 @@ export * from './src/tip6963';
       }
     }
 
-    console.log('[BearbyTron] Calling provider.init()');
-    provider.init();
-
     (window as any).__bearby_response_handlers = (window as any).__bearby_response_handlers || {};
     (window as any).__bearbyTronInjected = true;
 
-    // TIP-6963 provider discovery
+    // TIP-6963 provider discovery — register listener before init so dApps can request provider
     setupTIP6963RequestListener(tronProvider);
     announceProvider(tronProvider);
     console.log('[BearbyTron] TIP-6963 provider announced');
+
+    // Await init so window.tronWeb.defaultAddress is populated before tronLink#initialized fires.
+    // dApps that listen with { once: true } will read the correct address on the first event.
+    console.log('[BearbyTron] Calling provider.init() — awaiting...');
+    await provider.init();
+    console.log('[BearbyTron] provider.init() complete, tronWeb.defaultAddress=' + JSON.stringify((window as any).tronWeb?.defaultAddress));
 
     window.dispatchEvent(new Event('tron#initialized'));
     console.log('[BearbyTron] tron#initialized event dispatched');

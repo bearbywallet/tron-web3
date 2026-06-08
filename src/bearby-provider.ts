@@ -89,7 +89,7 @@ export class BearbyProviderImpl {
   #setupFlutterEventHandler(): void {
     if (typeof window !== 'undefined' && window) {
       (window as any).handleBearbyEvent = (eventData: BearbyEventData) => {
-        console.log('[BearbyTron] handleBearbyEvent: ' + safeStringify(eventData));
+        console.log('[BearbyTron] handleBearbyEvent: event=' + eventData.event + ' data=' + safeStringify(eventData.data));
         const listeners = this.#eventListeners.get(eventData.event);
         if (listeners) {
           switch (eventData.event) {
@@ -116,9 +116,13 @@ export class BearbyProviderImpl {
               listeners.forEach(callback => callback(eventData.data as ProviderMessage));
               break;
             case 'dataChanged':
+              console.log('[BearbyTron] handleBearbyEvent: dataChanged address=' + (eventData.data as any)?.address + ' isAuth=' + (eventData.data as any)?.isAuth);
               this.#handleInitProviderData(eventData.data as InitProviderData);
+              console.log('[BearbyTron] handleBearbyEvent: dataChanged processed, tronWeb.defaultAddress=' + safeStringify(this.#tronProvider?.defaultAddress));
               break;
           }
+        } else {
+          console.log('[BearbyTron] handleBearbyEvent: no listeners registered for event=' + eventData.event);
         }
       };
     }
@@ -164,6 +168,7 @@ export class BearbyProviderImpl {
     console.log('[BearbyTron] handleInitProviderData: nodeConfig set=' + safeStringify(this.#nodeConfig));
 
     this.#tronProvider = this.#buildTronWeb(data);
+    console.log('[BearbyTron] handleInitProviderData: after buildTronWeb, defaultAddress=' + safeStringify(this.#tronProvider?.defaultAddress) + ' ready=' + this.#tronProvider?.ready);
 
     if (isInitialLoad || (!oldAddress && newAddress)) {
       console.log('[BearbyTron] handleInitProviderData: emitting connect');
@@ -171,7 +176,9 @@ export class BearbyProviderImpl {
       if (newAddress) {
         this.#postTronLinkMessage('connect', { address: newAddress });
       }
-      if (typeof window !== 'undefined') {
+      // Only re-dispatch tronLink#initialized for post-init transitions (user connects).
+      // The IIFE owns the initial dispatch after provider.init() resolves.
+      if (!isInitialLoad && typeof window !== 'undefined') {
         window.dispatchEvent(new Event('tron#initialized'));
         console.log('[BearbyTron] tron#initialized event re-dispatched on connect');
         window.dispatchEvent(new Event('tronLink#initialized'));
@@ -271,7 +278,9 @@ export class BearbyProviderImpl {
       };
     }
 
-    this.#nodeConfig = data!.node;
+    if (data!.node) {
+      this.#nodeConfig = data!.node;
+    }
     const fullHost = this.#nodeConfig?.fullNode || 'https://api.trongrid.io';
     console.log('[BearbyTron] buildTronWeb: creating TronWeb fullHost=' + fullHost + ' address=' + data!.address);
 
@@ -325,6 +334,7 @@ export class BearbyProviderImpl {
         result = await this.#requestExtension(payload);
       }
       console.log('[BearbyTron] request: success result=' + safeStringify(result));
+      console.log('[BearbyTron] request: post-resolve tronWeb.defaultAddress=' + safeStringify((window as any).tronWeb?.defaultAddress));
       return result;
     } catch (error: any) {
       console.log('[BearbyTron] request: error=' + safeStringify(error));
@@ -361,6 +371,7 @@ export class BearbyProviderImpl {
 
       const responseHandler = (event: MessageEvent) => {
         const data = event.data;
+        console.log('[BearbyTron] requestFlutter: message event type=' + (data?.type) + ' uuid=' + (data?.uuid) + ' waitingFor=' + id);
         if (!data || typeof data !== 'object') return;
 
         if (data.type === MESSAGE_TYPE.RESPONSE && data.uuid === id) {
