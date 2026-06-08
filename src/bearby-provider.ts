@@ -31,6 +31,7 @@ export class BearbyProviderImpl {
     'tron_signMessageV2',
     'multiSign',
     '_signTypedData',
+    'signTypedData',
     'getInitProviderData',
     'tronProviderRequest',
     'eth_requestAccounts',
@@ -67,7 +68,7 @@ export class BearbyProviderImpl {
     window.postMessage({
       isTronLink: true,
       message: { action, data },
-    }, '*');
+    }, window.location.origin);
   }
 
   #createProviderProxy(): any {
@@ -250,19 +251,23 @@ export class BearbyProviderImpl {
     console.log('[BearbyTron] buildTronWeb: isAuth=' + isAuth + ' address=' + (data?.address || 'none'));
 
     if (!isAuth) {
+      const notConnectedErr = () => Promise.reject(new Error('Wallet not connected'));
       return {
         ready: true,
         defaultAddress: { hex: false, base58: false },
         trx: {
-          sign: () => Promise.reject(new Error('Wallet not connected')),
-          signMessageV2: () => Promise.reject(new Error('Wallet not connected')),
-          multiSign: () => Promise.reject(new Error('Wallet not connected')),
+          sign: notConnectedErr,
+          signMessageV2: notConnectedErr,
+          multiSign: notConnectedErr,
+          _signTypedData: notConnectedErr,
+          signTypedData: notConnectedErr,
         },
         request: this.request.bind(this),
         on: this.on.bind(this),
         removeListener: this.removeListener.bind(this),
         isTronLink: true,
         isBearby: true,
+        tronlinkParams: { websiteName: getMetaDataFromTags().title, websiteIcon: getFavicon() },
       };
     }
 
@@ -279,11 +284,13 @@ export class BearbyProviderImpl {
     tw.trx.signMessageV2 = this.signMessageV2.bind(this);
     tw.trx.multiSign = this.multiSign.bind(this);
     tw.trx._signTypedData = this._signTypedData.bind(this);
+    (tw.trx as any).signTypedData = this.signTypedData.bind(this);
     (tw as any).request = this.request.bind(this);
     (tw as any).on = this.on.bind(this);
     (tw as any).removeListener = this.removeListener.bind(this);
     (tw as any).isTronLink = true;
     (tw as any).isBearby = true;
+    (tw as any).tronlinkParams = { websiteName: getMetaDataFromTags().title, websiteIcon: getFavicon() };
 
     return tw;
   }
@@ -671,6 +678,42 @@ export class BearbyProviderImpl {
       })
       .catch((err) => {
         console.log('[BearbyTron] _signTypedData: error=' + safeStringify(err));
+        callback(err);
+      });
+  }
+
+  signTypedData(domain: any, types: any, value: any, privateKey: any = false, callback: any = false): any {
+    console.log('[BearbyTron] signTypedData: hasDomain=' + !!domain + ' hasTypes=' + !!types + ' hasValue=' + !!value + ' hasPrivateKey=' + !!privateKey + ' hasCallback=' + !!callback);
+    if (isFunction(privateKey)) {
+      callback = privateKey;
+      privateKey = false;
+    }
+
+    if (!callback) {
+      return this.#handlePromiseSign(this.signTypedData.bind(this), domain, types, value, privateKey);
+    }
+
+    if (privateKey) {
+      return callback("Direct private key signing is not supported");
+    }
+
+    if (!this.#tronProvider.ready) {
+      return callback("User has not unlocked wallet");
+    }
+
+    if (!domain || !types || !value) {
+      return callback("Invalid params provided");
+    }
+
+    const params = { domain, types, message: value };
+    console.log('[BearbyTron] signTypedData: request params=' + safeStringify(params));
+    this.request({ method: 'signTypedData', params })
+      .then((res) => {
+        console.log('[BearbyTron] signTypedData: success result=' + safeStringify(res));
+        callback(null, res);
+      })
+      .catch((err) => {
+        console.log('[BearbyTron] signTypedData: error=' + safeStringify(err));
         callback(err);
       });
   }
