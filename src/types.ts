@@ -108,7 +108,7 @@ declare global {
     tron?: any;
     tronWeb?: any;
     tronLink?: any;
-    flutter_inappwebview?: {
+    webview_plus?: {
       callHandler(handlerName: string, ...args: any[]): Promise<any>;
     };
     handleBearbyEvent?: (eventData: BearbyEventData) => void;

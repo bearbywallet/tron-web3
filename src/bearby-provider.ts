@@ -42,13 +42,15 @@ export class BearbyProviderImpl {
   ]);
 
   #eventListeners: Map<string, Set<(...args: any[]) => void>> = new Map();
-  #isFlutterMode: boolean;
+
+  get #isFlutterMode(): boolean {
+    return typeof window !== 'undefined' && typeof (window as any).webview_plus !== 'undefined';
+  }
   #tronProvider: any = null;
   #chainId?: string;
   #nodeConfig?: NodeConfig;
 
   constructor() {
-    this.#isFlutterMode = typeof window !== 'undefined' && typeof (window as any).flutter_inappwebview !== 'undefined';
     console.log('[BearbyTron] constructor: isFlutterMode=' + this.#isFlutterMode);
     this.#tronProvider = this.#createProviderProxy();
     console.log('[BearbyTron] constructor: proxy created');
@@ -359,8 +361,8 @@ export class BearbyProviderImpl {
       console.log('[BearbyTron] requestFlutter: uuid=' + id + ' method=' + payload.method);
       console.log('[BearbyTron] requestFlutter: message=' + safeStringify(message));
 
-      if (typeof window === 'undefined' || !window || !(window as any).flutter_inappwebview) {
-        console.log('[BearbyTron] requestFlutter: flutter_inappwebview not available');
+      if (typeof window === 'undefined' || !window || !(window as any).webview_plus) {
+        console.log('[BearbyTron] requestFlutter: webview_plus not available');
         reject({
           message: 'BearBy channel is not available',
           code: RpcErrorCode.DISCONNECTED,
@@ -403,7 +405,7 @@ export class BearbyProviderImpl {
 
       try {
         console.log('[BearbyTron] requestFlutter: calling callHandler TIP6963TRON');
-        (window as any).flutter_inappwebview.callHandler('TIP6963TRON', JSON.stringify(message))
+        (window as any).webview_plus.callHandler('TIP6963TRON', JSON.stringify(message))
           .then(() => {
             console.log('[BearbyTron] requestFlutter: callHandler sent confirmation');
           })
