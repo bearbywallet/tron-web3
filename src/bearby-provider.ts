@@ -52,8 +52,8 @@ export class BearbyProviderImpl {
 
   constructor() {
     console.log('[BearbyTron] constructor: isFlutterMode=' + this.#isFlutterMode);
-    this.#tronProvider = this.#createProviderProxy();
-    console.log('[BearbyTron] constructor: proxy created');
+    this.#tronProvider = this.#buildTronWeb();
+    console.log('[BearbyTron] constructor: initial tronWeb created');
     this.#initializeEvents();
     console.log('[BearbyTron] constructor: events initialized');
     this.#setupFlutterEventHandler();
@@ -151,12 +151,15 @@ export class BearbyProviderImpl {
     });
   }
 
+  #isInitialLoadDone: boolean = false;
+
   #handleInitProviderData(data: InitProviderData): void {
     console.log('[BearbyTron] handleInitProviderData: data=' + safeStringify(data));
-    const oldAddress = this.#tronProvider?.defaultAddress?.base58;
+    const oldAddress = this.#tronProvider?.defaultAddress?.base58 || null;
     const oldChainId = this.#chainId;
-    const newAddress = data.isAuth ? data.address : null;
-    const isInitialLoad = oldAddress === undefined;
+    const newAddress = data.isAuth && isTronAddress(data.address) ? data.address : null;
+    const isInitialLoad = !this.#isInitialLoadDone;
+    this.#isInitialLoadDone = true;
     console.log('[BearbyTron] handleInitProviderData: oldAddress=' + oldAddress + ' newAddress=' + newAddress + ' oldChainId=' + oldChainId + ' newChainId=' + data.chainId + ' isInitialLoad=' + isInitialLoad);
 
     this.#chainId = data.chainId;
@@ -178,23 +181,46 @@ export class BearbyProviderImpl {
       if (newAddress) {
         this.#postTronLinkMessage('connect', { address: newAddress });
       }
-      // Only re-dispatch tronLink#initialized for post-init transitions (user connects).
+      // Only re-dispatch tronlink#initialized for post-init transitions (user connects).
       // The IIFE owns the initial dispatch after provider.init() resolves.
       if (!isInitialLoad && typeof window !== 'undefined') {
         window.dispatchEvent(new Event('tron#initialized'));
         console.log('[BearbyTron] tron#initialized event re-dispatched on connect');
+        window.dispatchEvent(new Event('tronlink#initialized'));
         window.dispatchEvent(new Event('tronLink#initialized'));
-        console.log('[BearbyTron] tronLink#initialized event re-dispatched on connect');
+        console.log('[BearbyTron] tronlink#initialized event re-dispatched on connect');
+        if (this.#nodeConfig) {
+          this.#postTronLinkMessage('tabReply', {
+            success: true,
+            data: {
+              address: newAddress,
+              node: {
+                fullNode: this.#nodeConfig.fullNode,
+                solidityNode: this.#nodeConfig.solidityNode,
+                eventServer: this.#nodeConfig.eventServer,
+                chainId: this.#chainId,
+              },
+              name: data.name || 'Account',
+              type: data.type || 1,
+              isAuth: true,
+            },
+          });
+        }
       }
     }
 
     console.log('[BearbyTron] handleInitProviderData: checking setNode condition isInitialLoad=' + isInitialLoad + ' nodeConfig=' + !!this.#nodeConfig);
     if (isInitialLoad && this.#nodeConfig) {
       console.log('[BearbyTron] handleInitProviderData: sending setNode on initial load');
-      this.#postTronLinkMessage('setNode', {
+      const nodeInfo = {
         fullNode: this.#nodeConfig.fullNode,
         solidityNode: this.#nodeConfig.solidityNode,
         eventServer: this.#nodeConfig.eventServer,
+        chainId: this.#chainId,
+      };
+      this.#postTronLinkMessage('setNode', {
+        ...nodeInfo,
+        node: nodeInfo,
       });
     }
 
@@ -208,10 +234,15 @@ export class BearbyProviderImpl {
     if (oldChainId !== this.#chainId && this.#nodeConfig) {
       console.log('[BearbyTron] handleInitProviderData: emitting chainChanged');
       this.emit('chainChanged', this.#chainId);
-      this.#postTronLinkMessage('setNode', {
+      const nodeInfo = {
         fullNode: this.#nodeConfig.fullNode,
         solidityNode: this.#nodeConfig.solidityNode,
         eventServer: this.#nodeConfig.eventServer,
+        chainId: this.#chainId,
+      };
+      this.#postTronLinkMessage('setNode', {
+        ...nodeInfo,
+        node: nodeInfo,
       });
     } else {
       console.log('[BearbyTron] handleInitProviderData: chainChanged check failed oldChainId=' + oldChainId + ' chainId=' + this.#chainId + ' nodeConfig=' + !!this.#nodeConfig);
@@ -229,7 +260,7 @@ export class BearbyProviderImpl {
   }
 
   get defaultAddress() {
-    return this.#tronProvider?.defaultAddress ?? { hex: false, base58: false };
+    return this.#tronProvider?.defaultAddress || { hex: false, base58: false };
   }
 
   get node(): { fullNode: string; solidityNode: string; eventServer: string } | null {
@@ -256,14 +287,18 @@ export class BearbyProviderImpl {
   }
 
   #buildTronWeb(data?: InitProviderData): any {
-    const isAuth = data?.isAuth && isTronAddress(data.address);
+    const isAuth = Boolean(data?.isAuth && isTronAddress(data.address));
     console.log('[BearbyTron] buildTronWeb: isAuth=' + isAuth + ' address=' + (data?.address || 'none'));
+
+    if (data?.node) {
+      this.#nodeConfig = data.node;
+    }
 
     if (!isAuth) {
       const notConnectedErr = () => Promise.reject(new Error('Wallet not connected'));
       return {
-        ready: true,
-        defaultAddress: { hex: false, base58: false },
+        ready: false,
+        defaultAddress: false,
         trx: {
           sign: notConnectedErr,
           signMessageV2: notConnectedErr,
@@ -280,9 +315,6 @@ export class BearbyProviderImpl {
       };
     }
 
-    if (data!.node) {
-      this.#nodeConfig = data!.node;
-    }
     const fullHost = this.#nodeConfig?.fullNode || 'https://api.trongrid.io';
     console.log('[BearbyTron] buildTronWeb: creating TronWeb fullHost=' + fullHost + ' address=' + data!.address);
 
@@ -316,6 +348,24 @@ export class BearbyProviderImpl {
       return { address, node };
     }
 
+    if (payload.method === 'eth_chainId') {
+      return this.#chainId || '0x2b6653dc';
+    }
+
+    const currentAddress = this.#tronProvider?.defaultAddress?.base58;
+    if (payload.method === 'eth_accounts') {
+      return this.ready && isTronAddress(currentAddress) ? [currentAddress] : [];
+    }
+
+    if (this.ready && isTronAddress(currentAddress)) {
+      if (payload.method === 'eth_requestAccounts') {
+        return [currentAddress];
+      }
+      if (payload.method === 'tron_requestAccounts') {
+        return { code: 200, message: 'OK', address: currentAddress };
+      }
+    }
+
     if (!this.supportedMethods.has(payload.method)) {
       const error = {
         message: 'Unsupported method',
@@ -335,6 +385,29 @@ export class BearbyProviderImpl {
         console.log('[BearbyTron] request: routing to Extension');
         result = await this.#requestExtension(payload);
       }
+
+      if (
+        (payload.method === 'tron_requestAccounts' || payload.method === 'eth_requestAccounts') &&
+        !this.ready
+      ) {
+        const resolvedAddress = Array.isArray(result)
+          ? result[0]
+          : (result as any)?.address;
+        if (isTronAddress(resolvedAddress)) {
+          this.#handleInitProviderData({
+            isAuth: true,
+            address: resolvedAddress,
+            chainId: this.#chainId || '0x2b6653dc',
+            node: this.#nodeConfig,
+          });
+        } else if ((result as any)?.code === 200) {
+          const initData = await this.#getProviderInitData();
+          if (initData) {
+            this.#handleInitProviderData(initData);
+          }
+        }
+      }
+
       console.log('[BearbyTron] request: success result=' + safeStringify(result));
       console.log('[BearbyTron] request: post-resolve tronWeb.defaultAddress=' + safeStringify((window as any).tronWeb?.defaultAddress));
       return result;

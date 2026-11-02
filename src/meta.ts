@@ -10,10 +10,10 @@ function rgbToHex(rgb: string): string {
 }
 
 export function getMetaDataFromTags(): MetaData {
-  if (typeof document === 'undefined') {
+  if (typeof document === 'undefined' || typeof document.getElementsByTagName !== 'function') {
     return {
       description: '',
-      title: '',
+      title: typeof document !== 'undefined' ? document.title || '' : '',
       colors: null,
     };
   }
@@ -24,8 +24,8 @@ export function getMetaDataFromTags(): MetaData {
 
   for (let i = 0; i < metaTags.length; i++) {
     const meta = metaTags[i];
-    const name = meta.getAttribute('name');
-    const content = meta.getAttribute('content');
+    const name = meta.getAttribute?.('name');
+    const content = meta.getAttribute?.('content');
 
     if (!name || !content) continue;
 
@@ -39,19 +39,29 @@ export function getMetaDataFromTags(): MetaData {
     }
   }
 
-  const bodyStyles = window.getComputedStyle(document.body);
-  const button = document.querySelector('button');
-  const buttonStyles = button ? window.getComputedStyle(button) : null;
-  const buttonHoverStyles = button ? window.getComputedStyle(button, ':hover') : null;
+  let colors: MetaData['colors'] = null;
+  if (document.body && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    try {
+      const bodyStyles = window.getComputedStyle(document.body);
+      const button = document.querySelector?.('button') ?? null;
+      const buttonStyles = button ? window.getComputedStyle(button) : null;
+      const buttonHoverStyles = button ? window.getComputedStyle(button, ':hover') : null;
 
-  const colors = {
-    background: rgbToHex(bodyStyles.backgroundColor),
-    text: rgbToHex(bodyStyles.color),
-    primary: buttonStyles ? rgbToHex(buttonStyles.backgroundColor) : undefined,
-    secondary: buttonHoverStyles && buttonHoverStyles.backgroundColor !== buttonStyles?.backgroundColor 
-      ? rgbToHex(buttonHoverStyles.backgroundColor) 
-      : buttonStyles ? rgbToHex(buttonStyles.backgroundColor) : undefined,
-  };
+      colors = {
+        background: rgbToHex(bodyStyles.backgroundColor),
+        text: rgbToHex(bodyStyles.color),
+        primary: buttonStyles ? rgbToHex(buttonStyles.backgroundColor) : undefined,
+        secondary:
+          buttonHoverStyles && buttonHoverStyles.backgroundColor !== buttonStyles?.backgroundColor
+            ? rgbToHex(buttonHoverStyles.backgroundColor)
+            : buttonStyles
+              ? rgbToHex(buttonStyles.backgroundColor)
+              : undefined,
+      };
+    } catch {
+      colors = null;
+    }
+  }
 
   return {
     description: description || '',

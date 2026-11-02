@@ -15,7 +15,10 @@ export * from './src/tip6963';
   }
 
   if ((window as any).__bearbyTronInjected) {
-    console.log('[BearbyTron] Already injected — skipping');
+    console.log('[BearbyTron] Already injected — re-announcing');
+    if ((window as any).tron) {
+      announceProvider((window as any).tron);
+    }
     return;
   }
 
@@ -83,8 +86,9 @@ export * from './src/tip6963';
 
     window.dispatchEvent(new Event('tron#initialized'));
     console.log('[BearbyTron] tron#initialized event dispatched');
+    window.dispatchEvent(new Event('tronlink#initialized'));
     window.dispatchEvent(new Event('tronLink#initialized'));
-    console.log('[BearbyTron] tronLink#initialized event dispatched');
+    console.log('[BearbyTron] tronlink#initialized / tronLink#initialized events dispatched');
   } catch (error) {
     try {
       console.log('[BearbyTron] IIFE catch error: ' + JSON.stringify(error));
